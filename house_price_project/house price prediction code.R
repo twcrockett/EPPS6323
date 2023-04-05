@@ -1,5 +1,5 @@
 ## project6323. 
-## author: xiaoyan Zhang
+## xiaoyan Zhang
 ## purpose
 #######################################################
 ## The project is to build the model to forcast the ###
@@ -235,7 +235,7 @@ house_df$month_ind<- month(house_df$SOLD_MONTH)
 
 library(rsample)
 set.seed(123)
-initial_split_df<- initial_split(house_df, prop = 0.7, strata = "PRICE")
+initial_split_df<- initial_split(house_df, prop = 0.7)
 train_data<- training(initial_split_df)
 test_data<- testing(initial_split_df)
 
