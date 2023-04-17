@@ -51,9 +51,9 @@ ggplot(redfin, aes(x = `SOLD DATE`, y = PRICE)) +
 
 beds <- redfin %>% group_by(`MONTH SOLD`, BEDS)%>% 
   summarize(Mean=mean(PRICE), Max=max(PRICE), Min=min(PRICE), 
-            Med=median(PRICE), Std=sd(PRICE))
+            MedPrice=median(PRICE), Std=sd(PRICE))
 
-ggplot(beds, aes(x = `BEDS`, y = Med)) + 
+ggplot(beds, aes(x = `BEDS`, y = MedPrice)) + 
   geom_point() +
   stat_smooth(method = "lm", col = "red") + 
   scale_y_continuous(trans='log10')
