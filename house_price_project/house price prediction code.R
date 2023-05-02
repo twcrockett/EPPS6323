@@ -306,7 +306,7 @@ cv.out <- cv.glmnet(as.matrix(x_train2), train_data[ ,"log_price"], alpha = 1)
 plot(cv.out)
 bestlam <- cv.out$lambda.min
 lasso.pred <- predict(lasso_model, s = bestlam, newx = as.matrix(x_test2))
-mean((lasso.pred - test_data$log_price)^2)     # lowest MSE
+MSE.linreg = mean((lasso.pred - test_data$log_price)^2)     # lowest MSE
 
 
 ## build random forest model
@@ -352,7 +352,7 @@ rf.pred.plot <- plot(test.rf.pred$PRED, test.rf$log_price)
 abline(0, 1)
 rf.pred.plot
 
-test.rf.MSE = mean((test.rf.pred$PRED - test.rf.pred$log_price)^2)
+MSE.rf = mean((test.rf.pred$PRED - test.rf.pred$log_price)^2)
 
 
 # Prediction
@@ -400,7 +400,7 @@ best_model <- gbm(log_price ~ ., data = train_data, n.trees = 60,
                   interaction.depth = 10, shrinkage = 0.1,n.minobsinnode = 5,
                   distribution = "gaussian")
 best_pred <- predict(best_model, newdata = test_data)
-mse<-mean((test_data$log_price - best_pred)^2)
+MSE.gbm = mean((test_data$log_price - best_pred)^2)
 
 
 # calculate var importance
