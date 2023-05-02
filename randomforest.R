@@ -26,7 +26,7 @@ redfin  <- read_xlsx("redfindata.xlsx",
                                     "numeric", #SELLAGE
                                     "numeric", # PRICE_SQFT
                                     "numeric", # HOA_MONTH
-                                    "numeric", # MLS#
+                                    "text", # MLS#
                                     "skip", # LATITUDE
                                     "skip" # LONGITUDE
                             )) %>% 
@@ -92,18 +92,14 @@ test <- df[ind==2,]
 mtry <- sqrt(ncol(df))
 
 rf <- randomForest(PRICE ~ ., data=train, importance=TRUE, proximity=TRUE, ntree=1000)
-rf.plot <- plot(rf, log="y")
-
+rf.plot <- plot(rf, log="y", main="OOB Error Rate vs. Number of Trees")
+rf.plot
 
 train.pred <- train
 train.pred$PRED <- predict(rf, train)
-train.pred$DIFF <- scale(train.pred$PRED) - scale(train.pred$PRICE)
-train.avgdiff <- mean(train.pred$DIFF)
+train.pred$DIFF <- train.pred$PRED - train.pred$PRICE
 
 test.pred <- test
 test.pred$PRED <- predict(rf, test)
-test.pred$DIFF <- scale(test.pred$PRED) - scale(test.pred$PRICE)
-test.avgdiff <- mean(test.pred$DIFF)
-
-# see what variable causes the most error
-cor(as.matrix(test.pred$DIFF,as.matrix(sapply(test.pred, is.numeric))))
+test.pred$DIFF <- test.pred$PRED - test.pred$PRICE
+test.MSE <- mean((test.pred$DIFF)^2)

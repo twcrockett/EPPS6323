@@ -19,10 +19,10 @@ library(gbm)
 
 ################ input data  #############
 #read house data
-house_data<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTDS23\\6323\\project\\house_data.csv")
+house_data<- read.csv("house_price_project/house_data.csv")
 
 # read HPI data
-hpi<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTDS23\\6323\\project\\Dallas_HPI.csv")
+hpi<- read.csv("Dallas_HPI.csv")
 
 # transformation
 # convert house data sold_month to date
@@ -312,44 +312,55 @@ mean((lasso.pred - test_data$log_price)^2)     # lowest MSE
 ## build random forest model
 
 #check missing value of train_data
-train_data_rf<- na.omit(train_data)
+train.rf <- na.omit(train_data)
 colSums(is.na(train_data_rf))
 colSums(is.na(train_data))
 # check missing value of test_data
-test_data_rf<- na.omit(test_data)
+test.rf <- na.omit(test_data)
 colSums(is.na(test_data_rf))
 colSums(is.na(test_data))
 
 # tune random forest 
-rf_tuned<- tuneRF(select(train_data_rf, -log_price), train_data_rf$log_price, 
+rf.tuning<- tuneRF(select(train.rf, -log_price), train.rf$log_price, 
                   ntreeTry=500, stepFactor= 1.5,
                   improve = 0, trace= TRUE, plot=TRUE)
+mtry = 7  # see rf.tuning ... low OOB for 7
 
-
-library(randomForest)
 set.seed(1)
-# Bagging of ensemble of 500 trees with all mtry = 7 variables at each split
-bag_train_data <- randomForest(log_price ~ ., data=train_data_rf, ntree=500,
-                            mtry = 7, na.action= na.omit, importance = TRUE)
-bag_train_data
-var_importance<- bag_train_data$importance
+
+rf <- randomForest(log_price ~ ., data=train.rf, importance=TRUE, proximity=TRUE, ntree=500,
+                   mtry=mtry)
+rf.plot <- plot(rf, log="y", main="OOB Error Rate vs. Number of Trees")
+rf.plot
+
+var_importance <- rf$importance
 var_importance_sorted <- var_importance[order(var_importance[,1], decreasing = FALSE),]
 barplot(var_importance_sorted[,1],
         names.arg = rownames(var_importance), 
         xlab = "Score",
-        main = "variable importance",
+        main = "Variable Importance",
         horiz = TRUE,las=1,)
 par(mar = c(3, 15, 2, 4))
 
+train.pred <- train.rf
+train.pred$PRED <- predict(rf, train.rf)
+
+test.rf.pred <- test.rf
+test.rf.pred$PRED <- predict(rf, test.rf)
+
+rf.pred.plot <- plot(test.rf.pred$PRED, test.rf$log_price)
+abline(0, 1)
+rf.pred.plot
+
+test.rf.MSE = mean((test.rf.pred$PRED - test.rf.pred$log_price)^2)
 
 
-
-
-## Prediction
+# Prediction
 test_pred <- predict(bag_train_data, newdata = test_data_rf)
 plot(test_pred, test_data_rf$log_price)
 abline(0, 1)
 mean((test_pred - test_data_rf$log_price)^2)
+
 
 ## build gradient boosting tree model 
 library(gbm)
