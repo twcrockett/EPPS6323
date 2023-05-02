@@ -11,12 +11,18 @@
 library(ggplot2)
 library(dplyr)
 library(lubridate)
+library(caret)
+library(zoo)
+library(randomForest)
+library(rsample)
+library(gbm)
+
 ################ input data  #############
 #read house data
-house_data<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTD S23\\6323\\project\\house_data.csv")
+house_data<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTDS23\\6323\\project\\house_data.csv")
 
 # read HPI data
-hpi<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTD S23\\6323\\project\\Dallas_HPI.csv")
+hpi<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTDS23\\6323\\project\\Dallas_HPI.csv")
 
 # transformation
 # convert house data sold_month to date
@@ -280,7 +286,7 @@ grid <- 10^seq(10, -5, length = 1000)  # lambda search grid
 
 x_train<- select(train_data, -log_price)
 month_df <- data.frame(model.matrix(~ month_ind - 1, data= x_train))
-# add column name to minth_ind
+# add column name to month_ind
 colnames(month_df)<- paste0("month_", levels(x_train$month_ind))
 x_train2<- cbind(x_train,month_df )
 x_train2<- select(x_train2, - month_ind)
@@ -308,6 +314,11 @@ mean((lasso.pred - test_data$log_price)^2)     # lowest MSE
 #check missing value of train_data
 train_data_rf<- na.omit(train_data)
 colSums(is.na(train_data_rf))
+colSums(is.na(train_data))
+# check missing value of test_data
+test_data_rf<- na.omit(test_data)
+colSums(is.na(test_data_rf))
+colSums(is.na(test_data))
 
 # tune random forest 
 rf_tuned<- tuneRF(select(train_data_rf, -log_price), train_data_rf$log_price, 
@@ -318,59 +329,119 @@ rf_tuned<- tuneRF(select(train_data_rf, -log_price), train_data_rf$log_price,
 library(randomForest)
 set.seed(1)
 # Bagging of ensemble of 500 trees with all mtry = 7 variables at each split
-bag_train_data <- randomForest(log_price ~ ., data=train_data, ntree=500,
+bag_train_data <- randomForest(log_price ~ ., data=train_data_rf, ntree=500,
                             mtry = 7, na.action= na.omit, importance = TRUE)
 bag_train_data
+var_importance<- bag_train_data$importance
+var_importance_sorted <- var_importance[order(var_importance[,1], decreasing = FALSE),]
+barplot(var_importance_sorted[,1],
+        names.arg = rownames(var_importance), 
+        xlab = "Score",
+        main = "variable importance",
+        horiz = TRUE,las=1,)
+par(mar = c(3, 15, 2, 4))
+
+
+
 
 
 ## Prediction
-test_pred <- predict(bag_train_data, newdata = test_data)
-plot(test_pred, test_data$log_price)
+test_pred <- predict(bag_train_data, newdata = test_data_rf)
+plot(test_pred, test_data_rf$log_price)
 abline(0, 1)
-mean((test_pred - test_data$log_price)^2)
+mean((test_pred - test_data_rf$log_price)^2)
 
 ## build gradient boosting tree model 
 library(gbm)
+# drop  similar variables based on importance
+train_data2<-subset(train_data, select = -c(hpi_lag3,hpi_1m_pct,hpi_6m_pct,hpi_lag1, HPI))
+
+
 set.seed(1)
-n_trees <- 200
-learning_rate <- 0.05
+n_trees <- 100
+learning_rate <- 0.1
 max_depth <- 10
-predictions <- matrix(0, nrow = nrow(test_data), ncol = n_trees)
+pred_train<-  matrix(0, nrow = nrow(train_data2), ncol = n_trees)
+
+pred_test <- matrix(0, nrow = nrow(test_data), ncol = n_trees)
 #use for loop to make predict
 for (i in 1:n_trees) {
-  model <- gbm(log_price ~ ., data = train_data, n.trees = i, 
+  model <- gbm(log_price ~ ., data = train_data2, n.trees = i, 
                interaction.depth = max_depth, shrinkage = learning_rate,
                distribution = "gaussian")
-  predictions[, i] <- predict(model, newdata = test_data, n.trees = i)
+  pred_train[, i] <- predict(model, newdata = train_data2, n.trees = i)
+  pred_test[, i] <- predict(model, newdata = test_data, n.trees = i)
 }
+
+
 #combine the prediction
-error_list <- apply((predictions-test_data$log_price)^2, 2, mean
-  )
+error_list_train <- apply((pred_train-train_data2$log_price)^2, 2, mean)
 
-plot(1:n_trees, error_list)
+error_list_test <- apply((pred_test-test_data$log_price)^2, 2, mean)
 
+plot(1:n_trees, error_list_train, type="l", col= "blue", xlab="nTree", ylab="Error", )
 
-## best tune
-gbmgrid<- expand.grid(interaction.depth = c(1,3,5,7,9), n.trees= c(50,100,150,200), 
-                      shrinkage =c(0.01, 0.05, 0.1), n.minobsinnode= 5)
-set.seed(123)
-gbm_model<- train(log_price~ ., data=test_data, method ="gbm",
-                  trControl = trainControl(method ="cv", number= 10),
-                  tuneGrid= gbmgrid)
-
-
+lines(1:n_trees,error_list_test, type="l", col = "red")
+legend("topright", legend = c("error_list_train", "error_list_test"), col = c("blue", "red"), lty = 1)
 
 #best model
-best_model <- gbm(log_price ~ ., data = train_data, n.trees = 100, 
-             interaction.depth = 9, shrinkage = 0.1,n.minobsinnode = 5,
-             distribution = "gaussian")
+best_model <- gbm(log_price ~ ., data = train_data, n.trees = 60, 
+                  interaction.depth = 10, shrinkage = 0.1,n.minobsinnode = 5,
+                  distribution = "gaussian")
 best_pred <- predict(best_model, newdata = test_data)
 mse<-mean((test_data$log_price - best_pred)^2)
 
 
+# calculate var importance
+var_importance<- summary(model)
+# sort var importance in descending order
+var_importance_sorted <- var_importance[order(var_importance[,2], decreasing = FALSE),]
+barplot(var_importance_sorted$rel.inf,
+        names.arg = rownames(var_importance), 
+        xlab = "Score",
+        main = "variable importance",
+        horiz = TRUE,las=1,)
+par(mar = c(3, 12, 2, 4))
+
+
+# # drop  similar variables based on importance
+# train_data2<-subset(train_data, select = -c(hpi_lag3,hpi_1m_pct,hpi_6m_pct,hpi_lag1, HPI))
+# 
+# ## best tune
+# gbmgrid<- expand.grid(interaction.depth = c(3,5,7,9), n.trees= c(10,50,100), 
+#                       shrinkage =c(0.01, 0.05, 0.1), n.minobsinnode= 5)
+# set.seed(123)
+# 
+# gbm_model<- train(log_price~ ., data=na.fill(train_data2,0), method ="gbm",
+#                   trControl = trainControl(method ="cv", number= 10),
+#                   tuneGrid= gbmgrid)
+# 
+# ## best tune
+# gbmgrid2<- expand.grid(interaction.depth = c(9,12), n.trees= c(100, 150), 
+#                       shrinkage =c(0.01, 0.05, 0.1), n.minobsinnode= 5)
+# set.seed(123)
+# 
+# gbm_model2<- train(log_price~ ., data=na.fill(train_data2,0), method ="gbm",
+#                   trControl = trainControl(method ="cv", number= 10),
+#                   tuneGrid= gbmgrid2)
+# 
+# 
+# #best model
+# best_model <- gbm(log_price ~ ., data = train_data, n.trees = 100, 
+#              interaction.depth = 9, shrinkage = 0.1,n.minobsinnode = 5,
+#              distribution = "gaussian",verbose = TRUE)
+# best_pred <- predict(best_model, newdata = test_data)
+# mse<-mean((test_data$log_price - best_pred)^2)
+# mse
+
+
+
+
+
+
 ################################# out of time testing ####################
 # read house data oot
-house_data_oot<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTD S23\\6323\\project\\house_data_oot.csv")
+house_data_oot<- read.csv("C:\\Users\\xiaoy\\Desktop\\UTDS23\\6323\\project\\house_data_oot.csv")
 
 house_data_oot$SOLD_MONTH<- as.Date("2023-01-01")
 house_data_oot$base_month<- floor_date(house_data_oot$SOLD_MONTH, unit = "month") - months(1)
@@ -425,6 +496,38 @@ house_df_oot$pred_price <- exp(house_df_oot$pred_log_price)
 
 
 pred_error_oot<- ((house_df_oot$pred_price- house_df_oot$PRICE)/ house_df_oot$PRICE)
+
+# stack house data and house oot data 
+# drop price from oot data
+house_df_oot2<- subset(house_df_oot, select = -c(PRICE))
+
+house_df_extended<- bind_rows(house_df,house_df_oot2 )
+
+#median price by month
+price_med_month_act <- aggregate(PRICE ~ SOLD_MONTH, data=house_df_extended, median)
+
+price_med_month_pred<- aggregate(pred_price ~ SOLD_MONTH, data=house_df_extended, median)
+price_med_month <- bind_rows(price_med_month_act,price_med_month_pred )
+price_med_month$price_all <- ifelse(price_med_month$SOLD_MONTH < "2023-01-01" , price_med_month$PRICE, price_med_month$pred_price)
+price_med_month <- price_med_month%>%
+  mutate(price_all_lag1 = lag(price_all))%>%
+  mutate(price_1m_change =( (price_all/price_all_lag1)-1)*100)
+ 
+par(mar = c(5, 4, 4, 8))
+plot(price_med_month$SOLD_MONTH, price_med_month$price_all, xlab="SOLD_MONTH", ylab ="PRICE",
+     main="Median Price by Month", type= "l",xaxt = "n",col="red", lty= "dotted")  # xaxt = "n" removes default x-axis labels
+axis(side = 1, at =  price_med_month$SOLD_MONTH, labels = price_med_month$SOLD_MONTH) 
+lines(price_med_month$SOLD_MONTH,price_med_month$PRICE, type="l", col = "blue")
+par(new = TRUE)                             # Add new plot
+plot(price_med_month$SOLD_MONTH, price_med_month$price_1m_change,               # Create second plot without axes
+     axes = FALSE, xlab="", ylab = "", col="green",type="l")
+axis(side = 4)      # Add second axis
+mtext("percentage(%)", side = 4, line = 3) 
+
+
+legend("topleft", legend = c( "Predict median price", "Actual median price","1 month price change"), col = c("red", "blue","green"), lty = 1)
+
+
 
 
 
